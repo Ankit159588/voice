@@ -3,25 +3,37 @@ import mongoose from "mongoose";
 const sessionSchema = new mongoose.Schema(
   {
     user_id: {
-      ref: "User",
       type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       required: [true, "User is required"],
+      index: true,
     },
+
     refreshTokenHash: {
       type: String,
-      required: true,
+      required: [true, "Refresh token hash is required"],
     },
+
     ip: {
       type: String,
-      required: [true, "Ip is required"],
+      default: null,
     },
+
     userAgent: {
       type: String,
-      required: [true, "User agent is required"],
+      default: null,
     },
+
     revoked: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+
+    expiresAt: {
+      type: Date,
+      required: [true, "Session expiry is required"],
+      index: { expires: 0 },
     },
   },
   {
@@ -29,6 +41,9 @@ const sessionSchema = new mongoose.Schema(
   },
 );
 
-const sesssionModel = mongoose.model("Session", sessionSchema);
+// Helps find active sessions belonging to a user.
+sessionSchema.index({ user_id: 1, revoked: 1 });
 
-export default sesssionModel;
+const sessionModel = mongoose.model("Session", sessionSchema);
+
+export default sessionModel;

@@ -1,32 +1,53 @@
 import mongoose from "mongoose";
 
-const userSchema = mongoose.Schema({
-  username: {
-    type: String,
-    required: [true, "Username is required"],
-    unique: true,
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, "Name is required"],
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      required: [true, "Email is required"],
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    passwordHash: {
+      type: String,
+      required: [true, "Password is required"],
+    },
+
+    role: {
+      type: String,
+      enum: ["admin", "user"],
+      default: "user",
+      required: true,
+    },
+
+    group: {
+      type: String,
+      enum: ["NAKULA", "ARJUNA", "BHIMA", "YUDHISHTHIRA"],
+      required: true,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    verified: {
+      type: Boolean,
+      default: false,
+    },
   },
-  email: {
-    type: String,
-    required: [true, "Email is required"],
-    unique: true,
+  {
+    timestamps: true,
   },
-  password: {
-    type: String,
-    required: [true, "Password is requiredj"],
-  },
-  verified: {
-    type: Boolean,
-    default: false,
-  },
-  group: {
-    type: String,
-    required: true,
-    enum: ["NAKULA", "ARJUNA", "BHIMA", "YUDHISHTHIRA"],
-    unique: true,
-    trim: true,
-  },
-});
+);
 
 const userModel = mongoose.model("User", userSchema);
 
