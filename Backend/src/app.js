@@ -3,6 +3,7 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import authRouter from "./router/auth.router.js";
 import dns from "dns";
+import serviceRouter from "./router/service.router.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
@@ -19,5 +20,7 @@ app.get("/test", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+
+app.use("/api/service", serviceRouter);
 
 export default app;
