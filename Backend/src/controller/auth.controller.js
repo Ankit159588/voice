@@ -786,3 +786,189 @@ export const logout = async (req, res) => {
     });
   }
 };
+
+export const refreshAccessToken = async (req, res) => {
+  try {
+    // 1. Read the refresh token from the HttpOnly cookie
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (!refreshToken || typeof refreshToken !== "string") {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is missing. Please log in again.",
+      });
+    }
+
+    if (!process.env.JWT_ACCESS_SECRET) {
+      console.error("JWT_ACCESS_SECRET is not configured");
+
+      return res.status(500).json({
+        success: false,
+        message: "Authentication is not configured",
+      });
+    }
+
+    const refreshDays = Number(process.env.JWT_REFRESH_DAYS || 7);
+
+    if (!Number.isInteger(refreshDays) || refreshDays < 1 || refreshDays > 30) {
+      return res.status(500).json({
+        success: false,
+        message: "Invalid refresh-token configuration",
+      });
+    }
+
+    // 2. Hash the presented refresh token
+    const oldTokenHash = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+
+    const now = new Date();
+
+    // 3. Find a valid, unrevoked session
+    const session = await sessionModel.findOne({
+      refreshTokenHash: oldTokenHash,
+      revoked: false,
+      expiresAt: { $gt: now },
+    });
+
+    if (!session) {
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/api/auth",
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is invalid or expired. Please log in again.",
+      });
+    }
+
+    // 4. Check the user still exists and is allowed to log in
+    const user = await userModel.findById(session.user_id);
+
+    if (!user || !user.verified || !user.isActive) {
+      await sessionModel.updateOne(
+        {
+          _id: session._id,
+          refreshTokenHash: oldTokenHash,
+        },
+        {
+          $set: { revoked: true },
+        },
+      );
+
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/api/auth",
+      });
+
+      return res.status(403).json({
+        success: false,
+        message: "Your account cannot refresh this session",
+      });
+    }
+
+    // 5. Generate the next refresh token
+    const newRefreshToken = crypto.randomBytes(32).toString("hex");
+
+    const newTokenHash = crypto
+      .createHash("sha256")
+      .update(newRefreshToken)
+      .digest("hex");
+
+    const newExpiresAt = new Date(
+      Date.now() + refreshDays * 24 * 60 * 60 * 1000,
+    );
+
+    // 6. Atomically rotate the token.
+    // Only one concurrent request can replace this old token.
+    const updatedSession = await sessionModel.findOneAndUpdate(
+      {
+        _id: session._id,
+        refreshTokenHash: oldTokenHash,
+        revoked: false,
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        $set: {
+          refreshTokenHash: newTokenHash,
+          expiresAt: newExpiresAt,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!updatedSession) {
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/api/auth",
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token has already been used or revoked",
+      });
+    }
+
+    // 7. Issue a new access token with current user permissions
+    const accessTokenExpiresIn = process.env.JWT_ACCESS_EXPIRES_IN || "30m";
+
+    const accessToken = jwt.sign(
+      {
+        user_id: user._id.toString(),
+        role: user.role,
+        group: user.group,
+        sid: updatedSession._id.toString(),
+      },
+      process.env.JWT_ACCESS_SECRET,
+      {
+        expiresIn: accessTokenExpiresIn,
+        issuer: "your-app",
+        audience: "your-app-users",
+      },
+    );
+
+    // 8. Replace the refresh cookie with the new token
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/api/auth",
+      maxAge: refreshDays * 24 * 60 * 60 * 1000,
+    });
+
+    // 9. Return the new access token
+    return res.status(200).json({
+      success: true,
+      message: "Access token refreshed successfully",
+      data: {
+        accessToken,
+        tokenType: "Bearer",
+        expiresIn: accessTokenExpiresIn,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          group: user.group,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
