@@ -4,6 +4,8 @@ import cookieParser from "cookie-parser";
 import authRouter from "./router/auth.router.js";
 import dns from "dns";
 import serviceRouter from "./router/service.router.js";
+import assignmentRouter from "./router/assignment.router.js";
+import userRouter from "./router/user.router.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
@@ -23,4 +25,7 @@ app.use("/api/auth", authRouter);
 
 app.use("/api/service", serviceRouter);
 
+app.use("/api/assignment", assignmentRouter);
+
+app.use("/api/users", userRouter);
 export default app;

@@ -165,7 +165,7 @@ export const updateService = async (req, res) => {
   }
 };
 
-// DELETE SERVICE
+// SOFT DELETE SERVICE
 export const deleteService = async (req, res) => {
   try {
     const { id } = req.params;
@@ -177,7 +177,11 @@ export const deleteService = async (req, res) => {
       });
     }
 
-    const service = await serviceModel.findByIdAndDelete(id);
+    const service = await serviceModel.findByIdAndUpdate(
+      id,
+      { $set: { isActive: false } },
+      { new: true },
+    );
 
     if (!service) {
       return res.status(404).json({
@@ -188,10 +192,12 @@ export const deleteService = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Service deleted successfully",
+      message: "Service deactivated successfully",
+      service,
     });
   } catch (error) {
     console.error("Delete service error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
