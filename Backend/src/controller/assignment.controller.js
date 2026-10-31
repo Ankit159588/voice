@@ -131,7 +131,33 @@ export const createAssignment = async (req, res) => {
 
 export const getAssignmentDashboard = async (req, res) => {
   try {
-    const { service_id, group, status, user_id } = req.query;
+    const {
+      service_id,
+      group,
+      status,
+      user_id,
+      page = 1,
+      limit = 10,
+      search,
+    } = req.query;
+
+    const currentPage = Number(page);
+    const pageSize = Number(limit);
+
+    if (
+      !Number.isInteger(currentPage) ||
+      currentPage < 1 ||
+      !Number.isInteger(pageSize) ||
+      pageSize < 1 ||
+      pageSize > 100
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid page or limit",
+      });
+    }
+
+    const skip = (currentPage - 1) * pageSize;
 
     const filter = {};
 
@@ -199,12 +225,66 @@ export const getAssignmentDashboard = async (req, res) => {
       filter.assigned_to = user_id || { $in: groupUserIds };
     }
 
-    const assignments = await assignmentModel
-      .find(filter)
-      .populate("service_id", "title description isActive")
-      .populate("assigned_to", "name email group")
-      .populate("assigned_by", "name")
-      .sort({ createdAt: -1 });
+    if (search && search.trim()) {
+      const matchingUsers = await userModel
+        .find({
+          $or: [
+            { name: { $regex: search.trim(), $options: "i" } },
+            { email: { $regex: search.trim(), $options: "i" } },
+          ],
+        })
+        .select("_id");
+
+      const matchingUserIds = matchingUsers.map((user) => user._id);
+
+      if (filter.assigned_to) {
+        const existingIds = filter.assigned_to.$in;
+
+        if (existingIds) {
+          filter.assigned_to = {
+            $in: existingIds.filter((id) =>
+              matchingUserIds.some(
+                (matchedId) => matchedId.toString() === id.toString(),
+              ),
+            ),
+          };
+        } else {
+          filter.assigned_to = {
+            $in: matchingUserIds.filter(
+              (id) => id.toString() === filter.assigned_to.toString(),
+            ),
+          };
+        }
+      } else {
+        filter.assigned_to = { $in: matchingUserIds };
+      }
+    }
+
+    const [assignments, totalAssignments] = await Promise.all([
+      assignmentModel
+        .find(filter)
+        .populate("service_id", "title description isActive")
+        .populate("assigned_to", "name email group")
+        .populate("assigned_by", "name")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize),
+
+      assignmentModel.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      pagination: {
+        currentPage,
+        pageSize,
+        totalAssignments,
+        totalPages: Math.ceil(totalAssignments / pageSize),
+        hasNextPage: currentPage * pageSize < totalAssignments,
+        hasPreviousPage: currentPage > 1,
+      },
+      assignments,
+    });
 
     return res.status(200).json({
       success: true,
